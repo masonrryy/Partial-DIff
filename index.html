@@ -80,6 +80,16 @@
 
     .variable-row label { font-size: 0.88rem; }
 
+    .number-entry {
+      display: flex;
+      gap: 6px;
+    }
+
+    .number-entry input {
+      min-width: 0;
+      flex: 1;
+    }
+
     button {
       border: 0;
       border-radius: 8px;
@@ -102,6 +112,14 @@
     .remove {
       background: #fff0ef;
       color: #a52c25;
+    }
+
+    .power-button {
+      flex: 0 0 auto;
+      padding: 8px 10px;
+      background: #edf2fa;
+      color: #24334d;
+      white-space: nowrap;
     }
 
     .primary {
@@ -202,7 +220,8 @@
       <h2 id="variables-heading">Measured variables</h2>
       <p class="hint">
         Enter each symbol used in your formula, its measured value, and its
-        absolute uncertainty (for example, 3.2 ± 0.1).
+        absolute uncertainty (for example, 3.2 ± 0.1). Use the ×10^ button
+        to enter scientific notation, such as 3.2 × 10^-4.
       </p>
 
       <div id="variables"></div>
@@ -241,8 +260,8 @@
 
       const fields = [
         { label: "Symbol", value: symbol, placeholder: "e.g. x or α", type: "text" },
-        { label: "Value", value, placeholder: "e.g. 3.2", type: "number" },
-        { label: "Uncertainty", value: uncertainty, placeholder: "e.g. 0.1", type: "number" }
+        { label: "Value", value, placeholder: "e.g. 3.2", type: "text" },
+        { label: "Uncertainty", value: uncertainty, placeholder: "e.g. 0.1", type: "text" }
       ];
 
       for (const field of fields) {
@@ -255,14 +274,36 @@
         input.value = field.value;
         input.placeholder = field.placeholder;
 
-        if (field.type === "number") {
-          input.step = "any";
-        } else {
+        if (field.label === "Symbol") {
           input.autocomplete = "off";
           input.spellcheck = false;
+          wrapper.append(label, input);
+        } else {
+          input.inputMode = "decimal";
+          input.autocomplete = "off";
+          const entry = document.createElement("div");
+          entry.className = "number-entry";
+          const powerButton = document.createElement("button");
+          powerButton.type = "button";
+          powerButton.className = "power-button";
+          powerButton.textContent = "×10^";
+          powerButton.setAttribute("aria-label", `Insert times ten to a power in ${field.label.toLowerCase()}`);
+          powerButton.addEventListener("click", () => {
+            const start = input.selectionStart ?? input.value.length;
+            const end = input.selectionEnd ?? input.value.length;
+            const text = input.value;
+            const insertion = "×10^";
+            const before = text.slice(0, start);
+            const after = text.slice(end);
+            const newValue = before + insertion + after;
+            input.value = newValue;
+            input.focus();
+            const caretPos = start + insertion.length;
+            input.setSelectionRange(caretPos, caretPos);
+          });
+          entry.append(input, powerButton);
+          wrapper.append(label, entry);
         }
-
-        wrapper.append(label, input);
         row.append(wrapper);
       }
 
@@ -277,8 +318,6 @@
       variablesElement.append(row);
     }
 
-    // Convert Greek letters to safe internal identifiers before parsing.
-    // This lets users write symbols such as α, θ, and Δ in formulas.
     function normalizeExpression(text) {
       return text
         .replaceAll("π", "pi")
@@ -289,6 +328,20 @@
         .replace(/[\u0370-\u03FF\u1F00-\u1FFF]/gu, character =>
           "greek_" + character.codePointAt(0).toString(16)
         );
+    }
+
+    function parseMeasurement(text, symbol, label) {
+      const normalized = text.trim()
+        .replace(/\s*/gu, "")
+        .replace(/[×xX]\s*10\s*\^\s*/gu, "e")
+        .replace(/\s+/gu, "")
+        .replace(/\^\+?(-?\d+)/gu, "e$1")
+        .replace(/\^\s*([-+]?\d+)/gu, "e$1");
+
+      if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/iu.test(normalized)) {
+        throw new Error(`The ${label} for "${symbol}" must be a number, such as 3.2 or 3.2 × 10^-4.`);
+      }
+      return Number(normalized);
     }
 
     function parseRows() {
@@ -321,8 +374,8 @@
           throw new Error(`Enter both a value and an uncertainty for "${symbol}".`);
         }
 
-        const value = Number(valueText);
-        const uncertainty = Number(uncertaintyText);
+        const value = parseMeasurement(valueText, symbol, "value");
+        const uncertainty = parseMeasurement(uncertaintyText, symbol, "uncertainty");
 
         if (!Number.isFinite(value)) {
           throw new Error(`The value for "${symbol}" must be a finite number.`);
@@ -342,9 +395,11 @@
 
     function formatNumber(value) {
       if (!Number.isFinite(value)) return String(value);
-      return new Intl.NumberFormat(undefined, {
-        maximumSignificantDigits: 8
-      }).format(value);
+      if (value === 0) return "0";
+      const exponent = Math.floor(Math.log10(Math.abs(value)));
+      const mantissa = value / (10 ** exponent);
+      const roundedMantissa = Number(mantissa.toPrecision(4));
+      return `${roundedMantissa} × 10^${exponent}`;
     }
 
     function calculate() {
@@ -356,7 +411,6 @@
         let expression = document.getElementById("equation").value.trim();
         if (!expression) throw new Error("Enter an expression.");
 
-        // Allow either a bare expression or a simple equation such as "v = d/t".
         const equalsCount = (expression.match(/=/g) || []).length;
         if (equalsCount > 1) {
           throw new Error("Use a single equals sign at most, for example: v = d / t.");
@@ -440,7 +494,6 @@
     document.getElementById("add-variable").addEventListener("click", () => addVariable());
     document.getElementById("calculate").addEventListener("click", calculate);
 
-    // Example: sqrt(3² + 4²) = 5, with propagated uncertainty.
     addVariable("x", "3", "0.1");
     addVariable("y", "4", "0.2");
     calculate();
