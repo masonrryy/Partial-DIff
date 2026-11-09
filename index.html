@@ -138,7 +138,10 @@
       display: none;
     }
 
-    .result.visible { display: block; }
+    .result.visible,
+    .error.visible {
+      display: block;
+    }
 
     .answer {
       font-size: 1.5rem;
@@ -178,8 +181,6 @@
       padding: 12px;
       margin-top: 14px;
     }
-
-    .error.visible { display: block; }
 
     @media (max-width: 600px) {
       body { padding: 20px 12px; }
@@ -253,6 +254,23 @@
     const variablesElement = document.getElementById("variables");
     const errorElement = document.getElementById("error");
     const resultElement = document.getElementById("result");
+
+    function setError(message) {
+      errorElement.textContent = message || "Something went wrong while calculating.";
+      errorElement.classList.add("visible");
+      errorElement.hidden = false;
+    }
+
+    function clearError() {
+      errorElement.textContent = "";
+      errorElement.classList.remove("visible");
+      errorElement.hidden = true;
+    }
+
+    function setResultVisible(visible) {
+      resultElement.classList.toggle("visible", visible);
+      resultElement.hidden = !visible;
+    }
 
     function addVariable(symbol = "", value = "", uncertainty = "") {
       const row = document.createElement("div");
@@ -396,16 +414,21 @@
     function formatNumber(value) {
       if (!Number.isFinite(value)) return String(value);
       if (value === 0) return "0";
+
       const exponent = Math.floor(Math.log10(Math.abs(value)));
       const mantissa = value / (10 ** exponent);
       const roundedMantissa = Number(mantissa.toPrecision(4));
+
+      if (Math.abs(exponent) <= 3) {
+        return Number(value.toPrecision(4)).toString();
+      }
+
       return `${roundedMantissa} × 10^${exponent}`;
     }
 
     function calculate() {
-      errorElement.textContent = "";
-      errorElement.classList.remove("visible");
-      resultElement.classList.remove("visible");
+      clearError();
+      setResultVisible(false);
 
       try {
         let expression = document.getElementById("equation").value.trim();
@@ -484,10 +507,9 @@
 
         const derivativesElement = document.getElementById("derivatives");
         derivativesElement.replaceChildren(table);
-        resultElement.classList.add("visible");
+        setResultVisible(true);
       } catch (error) {
-        errorElement.textContent = error.message || "Something went wrong while calculating.";
-        errorElement.classList.add("visible");
+        setError(error.message || "Something went wrong while calculating.");
       }
     }
 
